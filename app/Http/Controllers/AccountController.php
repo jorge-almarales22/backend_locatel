@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Account;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Validator;
 
 class AccountController extends Controller
@@ -13,10 +15,12 @@ class AccountController extends Controller
     {
         try {
 
-            $credentials = $request->only('name','value_initial');   
+            $credentials = $request->only('name', 'email', 'password', 'value_initial');   
 
             $validator = Validator::make($credentials, [
                 'name' => 'required|string',
+                'email' => 'required|email',
+                'password' => 'required|string|min:6',
                 'value_initial' => 'required|numeric',
             ]);
     
@@ -30,6 +34,8 @@ class AccountController extends Controller
 
             $user = new User();
             $user->name = $request->name;
+            $user->email = $request->email;
+            $user->password = Hash::make($request->password);
             $user->save();
 
             $account = new Account();
@@ -38,11 +44,20 @@ class AccountController extends Controller
             $account->user_id = $user->id;
             $account->save();
 
-            $account->save();
+            $credentials = $request->only('email', 'password');
+
+            if (! $token = JWTAuth::attempt($credentials)) {
+                return response()->json(['error' => 'invalid_credentials'], 400);
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Account created',
+                'token' => $token,
+                'data' => [
+                    'user' => $user,
+                    'account' => $account,
+                ]
             ], 200);
 
         } catch (\Exception $e) {
@@ -69,7 +84,7 @@ class AccountController extends Controller
                 ],422);
             }
 
-            $account = Account::FindOrFail($request->accountNumber);
+            $account = Account::where("account_number", $request->accountNumber)->firstOrFail();
 
             $account->balance += $request->value_to_consign;
 
@@ -101,7 +116,7 @@ class AccountController extends Controller
                 ],422);
             }
 
-            $account = Account::FindOrFail($request->accountNumber);
+            $account = Account::where("account_number", $request->accountNumber)->firstOrFail();
 
             if($request->value_to_withdraw > $account->balance) return response()->json(["error" => "The value to withdraw is greater than the amount you have in the account"], 500);
 
@@ -109,7 +124,11 @@ class AccountController extends Controller
 
             $account->save();
 
-            return response()->json($account->balance, 200);
+            return response()->json([
+                'success' => true,
+                'message' => 'Successfullly',
+                'data' => $account->balance
+            ], 200);
 
         } catch (\Exception $e) {
             return response()->json(['message'=>'Account not found!'], 404);
@@ -128,7 +147,7 @@ class AccountController extends Controller
                 ],422);
             endif;
 
-            $account = Account::FindOrFail($accountNumber);
+            $account = Account::where("account_number", $accountNumber)->firstOrFail();
 
             return response()->json($account->balance, 200);
 
